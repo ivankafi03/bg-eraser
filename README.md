@@ -69,4 +69,4 @@ Ensure you have **Python 3** installed on your system.
 
 ## License
 
-This project is open-source and free to use. Made with ❤️ by [ivankafi03](https://github.com/ivankafi03).
+This project is open-source and free to use. [ivankafi03](https://github.com/ivankafi03).
