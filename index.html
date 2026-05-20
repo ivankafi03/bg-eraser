@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DecOne Eraser — Free Background Removal</title>
+  <meta name="description" content="Remove image backgrounds instantly on-device. 100% free, private and runs entirely in your browser — no uploads, no accounts.">
+  <meta name="theme-color" content="#6366f1">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+  <!-- Visual Error Overlay for Debugging & Cache Recovery -->
+  <script>
+    function handleError(msg, detail) {
+      const existing = document.getElementById('debug-error-overlay');
+      if (existing) return;
+      
+      const errDiv = document.createElement('div');
+      errDiv.id = 'debug-error-overlay';
+      errDiv.style = 'position:fixed;top:0;left:0;right:0;background:#ef4444;color:#fff;padding:16px;font-family:monospace;z-index:99999;font-size:13px;line-height:1.5;border-bottom:4px solid #b91c1c;box-shadow:0 4px 20px rgba(0,0,0,0.4);';
+      
+      let recoveryBtn = '';
+      if ('serviceWorker' in navigator || 'caches' in window) {
+        recoveryBtn = '<br><button id="recovery-btn" style="margin-top:10px;padding:8px 16px;background:#fff;color:#ef4444;border:none;border-radius:6px;font-weight:bold;cursor:pointer;font-family:sans-serif;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,0.2);transition:all 0.2s;">Reset Cache & Force Reload</button>';
+      }
+      
+      errDiv.innerHTML = '<div style="max-width:1200px;margin:0 auto;display:flex;flex-direction:column;gap:4px;">' +
+                         '<strong>DECONE ERASER ERROR:</strong> ' + msg + 
+                         '<span style="opacity:0.8;font-size:11px;">' + detail + '</span>' + 
+                         recoveryBtn + 
+                         '</div>';
+      document.body.appendChild(errDiv);
+      
+      document.getElementById('recovery-btn')?.addEventListener('click', function() {
+        this.textContent = 'Clearing cache...';
+        this.disabled = true;
+        
+        const clearSW = 'serviceWorker' in navigator ? 
+          navigator.serviceWorker.getRegistrations().then(regs => Promise.all(regs.map(r => r.unregister()))) : 
+          Promise.resolve();
+          
+        const clearCaches = 'caches' in window ? 
+          caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))) : 
+          Promise.resolve();
+          
+        Promise.all([clearSW, clearCaches]).then(() => {
+          window.location.reload(true);
+        }).catch(err => {
+          window.location.reload(true);
+        });
+      });
+    }
+
+    window.onerror = function(msg, url, line, col, error) {
+      handleError(msg, 'at ' + url + ':' + line + ':' + col);
+      return false;
+    };
+    window.onunhandledrejection = function(event) {
+      handleError('Unhandled Promise Rejection: ' + event.reason, 'Rejection event');
+    };
+  </script>
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="DecOne Eraser — Free Background Removal">
+  <meta property="og:description" content="Remove image backgrounds instantly, 100% free and private.">
+  <meta property="og:type" content="website">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="style.css?v=13">
+</head>
+<body>
+
+<!-- Background Orbs -->
+<div class="bg-orbs" aria-hidden="true">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+<!-- History Float Button -->
+<button id="history-float-btn" class="history-float-btn" title="View History" aria-label="View processing history">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 3h7l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
+    <polyline points="12 9 12 13 14 15"/>
+  </svg>
+  <span id="history-badge" class="history-badge hidden">0</span>
+</button>
+
+<!-- Install Banner -->
+<div id="install-banner" class="install-banner hidden">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><polyline points="8 21 12 17 16 21"/></svg>
+  <p>Install DecOne Eraser as an app for offline access</p>
+  <button id="install-btn" class="btn btn-primary btn-sm">Install</button>
+  <button id="install-dismiss" class="btn btn-ghost btn-sm">✕</button>
+</div>
+
+<!-- History Modal -->
+<div id="history-modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="history-modal-title">
+  <div class="modal-backdrop"></div>
+  <div class="modal-panel">
+    <div class="modal-header">
+      <h2 class="modal-title" id="history-modal-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:8px"><path d="M3 3h7l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/></svg>
+        Processing History
+      </h2>
+      <button id="history-modal-close" class="modal-close" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="history-grid" class="history-grid"></div>
+    <div class="modal-footer">
+      <button id="history-clear-btn" class="btn btn-ghost btn-sm" style="color:var(--clr-error);border-color:rgba(239,68,68,.3)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6m4-6v6"/><path d="M9 6V4h6v2"/></svg>
+        Clear All
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Navbar -->
+<header>
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+    <div class="container nav-inner">
+      <a href="/" class="logo" aria-label="DecOne Eraser Home">
+        <div class="logo-visual-container">
+          <div class="logo-default">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" class="logo-premium">
+              <defs>
+                <linearGradient id="premiumGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#6366f1"/>
+                  <stop offset="50%" stop-color="#a855f7"/>
+                  <stop offset="100%" stop-color="#ec4899"/>
+                </linearGradient>
+                <filter id="logoGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="2.5" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
+              <path d="M6 6h10c6.627 0 12 5.373 12 12s-5.373 12-12 12H6V6z" fill="url(#premiumGrad)" opacity="0.15" />
+              <path d="M6 6h8c5.523 0 10 4.477 10 10s-4.477 10-10 10H6V6z" stroke="url(#premiumGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M12 11l4-4v18" stroke="url(#premiumGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+              <circle cx="16" cy="18" r="2.5" fill="#ffffff" filter="url(#logoGlow)" />
+            </svg>
+          </div>
+          <div class="logo-eraser-wrapper">
+            <div class="eraser-trail"></div>
+            <div class="eraser-icon-animated">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="url(#premiumGrad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m20 20H7L3 16 14 5l7 7-4 4"/>
+                <path d="M6 17l-3-3 11-11"/>
+                <line x1="16" y1="11" x2="11" y2="16" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <span class="logo-text">DecOne<span class="logo-accent">Eraser</span></span>
+      </a>
+      <nav class="nav-links" aria-label="Page sections">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="nav-right">
+        <button id="hero-batch-btn" class="btn btn-ghost btn-sm" title="Batch Mode">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span class="nav-btn-text">Batch Mode</span>
+        </button>
+        <button id="hero-upload-btn" class="btn btn-primary btn-sm" title="Upload Image">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="mobile-only-icon" style="display:none"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+          <span class="nav-btn-text">Upload Image</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+</header>
+
+<main>
+
+  <!-- Hero -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="container">
+      <div class="hero-inner">
+        <div class="hero-badge">
+          <span class="badge-dot"></span>
+          On-Device · 100% Free · Private
+        </div>
+        <h1 class="hero-title" id="hero-title">
+          Remove Backgrounds<br>
+          <span class="gradient-text">Instantly &amp; Privately</span>
+        </h1>
+        <p class="hero-subtitle">
+          Upload any image and our <strong>smart engine removes the background in seconds</strong>—
+          completely free, no sign-up needed, and your images <strong>never leave your device</strong>.
+        </p>
+        <div class="hero-actions">
+          <button id="hero-upload-btn-2" class="btn btn-primary btn-xl" onclick="document.getElementById('hero-upload-btn').click()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+            Upload Image
+          </button>
+          <button class="btn btn-ghost btn-xl" onclick="document.getElementById('hero-batch-btn').click()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            Batch Process
+          </button>
+        </div>
+        <div class="hero-stats" role="list">
+          <div class="stat" role="listitem"><strong>100%</strong><span>Free</span></div>
+          <div class="stat-divider" aria-hidden="true"></div>
+          <div class="stat" role="listitem"><strong>&lt;5s</strong><span>Avg Speed</span></div>
+          <div class="stat-divider" aria-hidden="true"></div>
+          <div class="stat" role="listitem"><strong>0</strong><span>Uploads</span></div>
+          <div class="stat-divider" aria-hidden="true"></div>
+          <div class="stat" role="listitem"><strong>∞</strong><span>Images</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Upload Section -->
+  <section id="upload-section" class="upload-section" aria-labelledby="upload-title">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Get Started</span>
+        <h2 class="section-title" id="upload-title">Remove Your Background</h2>
+        <p class="section-subtitle">Drop an image or paste from clipboard. Supports JPG, PNG, WebP &amp; AVIF up to 15MB.</p>
+      </div>
+
+      <!-- Mode Switcher -->
+      <div style="display:flex;justify-content:center;margin-bottom:var(--space-xl)">
+        <div class="mode-switcher" role="tablist" aria-label="Processing mode">
+          <button class="mode-tab active" data-mode="single" role="tab" aria-selected="true" id="tab-single" aria-controls="single-panel">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            Single Image
+          </button>
+          <button class="mode-tab" data-mode="batch" role="tab" aria-selected="false" id="tab-batch" aria-controls="batch-panel">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            Batch
+            <span class="mode-badge">NEW</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Single Panel -->
+      <div id="single-panel" role="tabpanel" aria-labelledby="tab-single">
+        <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="Upload image: click or drag and drop">
+          <div class="drop-zone-content">
+            <div class="drop-icon" aria-hidden="true">
+              <div class="drop-icon-ring"></div>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+                <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+              </svg>
+            </div>
+            <p class="drop-title">Drop image here or click to browse</p>
+            <p class="drop-subtitle">Or paste with <kbd>Ctrl+V</kbd> / <kbd>⌘V</kbd></p>
+            <div class="drop-formats" aria-label="Supported formats">
+              <span>JPG</span><span>PNG</span><span>WebP</span><span>AVIF</span>
+            </div>
+            <p class="drop-size-note">Maximum file size: 15 MB</p>
+          </div>
+        </div>
+        <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,image/avif" class="visually-hidden" aria-label="Upload image file">
+
+        <!-- Result Panel -->
+        <div id="result-panel" class="result-panel hidden">
+
+          <!-- Processing State -->
+          <div id="state-processing" class="state-card state-processing hidden">
+            <div class="processing-animation" aria-hidden="true">
+              <div class="proc-ring proc-ring-1"></div>
+              <div class="proc-ring proc-ring-2"></div>
+              <div class="proc-ring proc-ring-3"></div>
+              <div class="proc-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10"/><path d="m16 2 4 4-4 4"/></svg>
+              </div>
+            </div>
+            <h3>Processing Your Image</h3>
+            <p id="processing-step">Loading model…</p>
+            <div style="position:relative;margin:0 auto;max-width:420px;">
+              <span id="progress-text" class="progress-text">0%</span>
+              <div class="progress-bar-container" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+                <div id="progress-bar" class="progress-bar"></div>
+              </div>
+            </div>
+            <p style="margin-top:var(--space-lg);font-size:.82rem;color:var(--clr-text-3)">
+              The model is downloaded once and cached for future use.
+            </p>
+          </div>
+
+          <!-- Error State -->
+          <div id="state-error" class="state-card state-error hidden">
+            <div class="error-icon" aria-hidden="true">
+              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            </div>
+            <h3>Processing Failed</h3>
+            <p id="error-msg">An error occurred while removing the background.</p>
+            <div class="error-actions">
+              <button class="btn btn-primary btn-md" data-action="retry">Try Another Image</button>
+              <button class="btn btn-ghost btn-md" onclick="location.reload()">Reload Page</button>
+            </div>
+          </div>
+
+          <!-- Success State -->
+          <div id="state-success" class="state-card state-success hidden">
+            <div class="success-header">
+              <div class="success-badge">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Background Removed!
+              </div>
+            </div>
+
+            <!-- View Tabs -->
+            <div class="result-view-tabs" role="tablist" aria-label="Result view">
+              <button class="rv-tab active" data-rv="compare" role="tab" aria-selected="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+                Before / After
+              </button>
+              <button class="rv-tab" data-rv="touchup" role="tab" aria-selected="false">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+                Touch-up Brush
+              </button>
+            </div>
+
+            <!-- Compare View -->
+            <div id="rv-compare" class="rv-panel">
+              <div id="comp-wrapper" class="comparison-wrapper" aria-label="Before and after comparison slider">
+                <div id="comp-before" class="comp-pane comp-before" aria-label="Original image">
+                  <img id="img-before" src="" alt="Original image">
+                  <span class="comp-label comp-label-before">ORIGINAL</span>
+                </div>
+                <div id="comp-after" class="comp-pane comp-after" aria-label="Processed image">
+                  <img id="img-after" src="" alt="Background removed">
+                  <span class="comp-label comp-label-after">RESULT</span>
+                </div>
+                <div id="comp-slider" class="comp-slider" role="slider" aria-label="Comparison slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+                  <div class="comp-handle" aria-hidden="true">
+                    <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><path d="M0 8l4-8v16L0 8z"/></svg>
+                    <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" style="transform:scaleX(-1)"><path d="M0 8l4-8v16L0 8z"/></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Touch-up View -->
+            <div id="rv-touchup" class="rv-panel hidden">
+              <div class="touchup-wrapper">
+                <div id="touchup-canvas-container" class="touchup-canvas-container" aria-label="Touch-up canvas">
+                  <p style="color:var(--clr-text-3);font-size:.88rem;padding:var(--space-xl)">Switch to Touch-up tab to load canvas</p>
+                </div>
+                <div class="brush-controls-panel">
+
+                  <!-- Brush Mode -->
+                  <div class="brush-section">
+                    <div class="brush-section-label">Mode</div>
+                    <div class="brush-mode-group" role="group" aria-label="Brush mode">
+                      <button class="brush-mode-btn active" data-brush-mode="erase" title="Erase pixels">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16 14 5l7 7-4 4"/><path d="M6 17l-3-3 11-11"/></svg>
+                        Erase
+                      </button>
+                      <button class="brush-mode-btn" data-brush-mode="restore" title="Restore pixels">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+                        Restore
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Brush Size -->
+                  <div class="brush-section">
+                    <div class="brush-section-label">Size: <strong id="brush-size-val">30px</strong></div>
+                    <input id="brush-size" class="brush-range" type="range" min="2" max="120" value="30" aria-label="Brush size">
+                  </div>
+
+                  <!-- Brush Opacity -->
+                  <div class="brush-section">
+                    <div class="brush-section-label">Opacity: <strong id="brush-opacity-val">100%</strong></div>
+                    <input id="brush-opacity" class="brush-range" type="range" min="5" max="100" value="100" aria-label="Brush opacity">
+                  </div>
+
+                  <!-- Zoom -->
+                  <div class="brush-section">
+                    <div class="brush-section-label">Zoom</div>
+                    <div class="zoom-controls">
+                      <button id="zoom-out" class="btn btn-ghost btn-sm" title="Zoom out">−</button>
+                      <span id="zoom-label" class="zoom-label">100%</span>
+                      <button id="zoom-in"  class="btn btn-ghost btn-sm" title="Zoom in">+</button>
+                    </div>
+                  </div>
+
+                  <!-- History -->
+                  <div class="brush-section">
+                    <div class="brush-section-label">History</div>
+                    <div class="brush-history-btns">
+                      <button id="touchup-undo"  class="btn btn-ghost btn-sm" disabled title="Undo (Ctrl+Z)">↩ Undo</button>
+                      <button id="touchup-redo"  class="btn btn-ghost btn-sm" disabled title="Redo (Ctrl+Y)">↪ Redo</button>
+                      <button id="touchup-reset" class="btn btn-ghost btn-sm" title="Reset canvas">⟳ Reset</button>
+                    </div>
+                  </div>
+
+                  <div class="brush-tip">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    Paint on the image to erase or restore pixels. Use Ctrl+Z to undo.
+                  </div>
+
+                  <button id="apply-touchup" class="btn btn-primary btn-md" style="width:100%;justify-content:center">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    Apply &amp; Update
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Background Options -->
+            <div class="bg-options-section">
+              <div class="bg-options-title">Background</div>
+              <div class="bg-options-grid" role="group" aria-label="Background options">
+                <button class="bg-option active" data-bg="transparent" title="Transparent background" aria-pressed="true">
+                  <div class="bg-preview checker" aria-hidden="true"></div>
+                  <span>Transparent</span>
+                </button>
+                <button class="bg-option" data-bg="white" title="White background" aria-pressed="false">
+                  <div class="bg-preview" style="background:#fff" aria-hidden="true"></div>
+                  <span>White</span>
+                </button>
+                <button class="bg-option" data-bg="black" title="Black background" aria-pressed="false">
+                  <div class="bg-preview" style="background:#000" aria-hidden="true"></div>
+                  <span>Black</span>
+                </button>
+                <button class="bg-option custom-color-btn" data-bg="color" title="Custom color" aria-pressed="false">
+                  <div class="bg-preview" style="background:linear-gradient(135deg,#f43f5e,#8b5cf6,#06b6d4)" aria-hidden="true"></div>
+                  <span>Color</span>
+                </button>
+                <button class="bg-option bg-img-btn" data-bg="image" title="Custom image" aria-pressed="false">
+                  <div class="bg-preview" style="background:linear-gradient(135deg,#1e293b,#334155);display:flex;align-items:center;justify-content:center" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  </div>
+                  <span>Image</span>
+                </button>
+              </div>
+              <input type="color" id="bg-color-picker" value="#ffffff" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" aria-label="Color picker">
+              <input type="file" id="bg-image-input" accept="image/*" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" aria-label="Background image">
+              <!-- Preview canvas (hidden, used for compositing) -->
+              <canvas id="bg-preview-canvas" style="display:none"></canvas>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+              <button class="btn btn-primary btn-lg" data-action="download-png">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.25"/></svg>
+                Download PNG
+              </button>
+              <button class="btn btn-ghost btn-lg" data-action="download-webp">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.25"/></svg>
+                Download WebP
+              </button>
+              <button class="btn btn-ghost btn-lg" data-action="copy-clipboard">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Copy
+              </button>
+              <button class="btn btn-ghost btn-lg" onclick="document.getElementById('file-input').click()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+                New Image
+              </button>
+            </div>
+
+            <p class="privacy-note">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Your images never leave your device. All processing happens locally in your browser.
+            </p>
+          </div>
+
+        </div><!-- /result-panel -->
+      </div><!-- /single-panel -->
+
+      <!-- Batch Panel -->
+      <div id="batch-panel" class="hidden" role="tabpanel" aria-labelledby="tab-batch">
+        <div id="batch-drop-zone" class="drop-zone batch-drop-zone" tabindex="0" role="button" aria-label="Add images to batch queue">
+          <div class="drop-zone-content">
+            <div class="drop-icon" aria-hidden="true">
+              <div class="drop-icon-ring"></div>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+              </svg>
+            </div>
+            <p class="drop-title">Drop multiple images or click to browse</p>
+            <p class="drop-subtitle">Add as many images as you need — processed one by one</p>
+            <div class="drop-formats">
+              <span>JPG</span><span>PNG</span><span>WebP</span><span>AVIF</span>
+            </div>
+          </div>
+        </div>
+        <input type="file" id="batch-file-input" accept="image/jpeg,image/png,image/webp,image/avif" multiple class="visually-hidden" aria-label="Add images to batch">
+
+        <!-- Batch Toolbar -->
+        <div id="batch-toolbar" class="batch-toolbar hidden">
+          <div class="batch-toolbar-info">
+            <div id="batch-count-label" class="batch-count-label"><strong>0</strong> files</div>
+            <div id="batch-progress-info" class="batch-progress-info"></div>
+          </div>
+          <div class="batch-toolbar-actions">
+            <button id="batch-process-btn" class="btn btn-primary btn-md">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Process All
+            </button>
+            <button id="batch-stop-btn" class="btn btn-ghost btn-md hidden">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+              Stop
+            </button>
+            <button id="batch-download-btn" class="btn btn-ghost btn-md" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download ZIP
+            </button>
+            <button id="batch-clear-btn" class="btn btn-ghost btn-md">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <!-- Batch Grid -->
+        <div id="batch-queue-grid" class="batch-queue-grid" role="list" aria-label="Batch image queue"></div>
+      </div><!-- /batch-panel -->
+
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section id="features" class="features-section" aria-labelledby="features-title">
+    <div class="container">
+      <div class="section-header animate-on-scroll">
+        <span class="section-tag">Features</span>
+        <h2 class="section-title" id="features-title">Everything You Need</h2>
+        <p class="section-subtitle">A complete, professional-grade background removal tool — right in your browser.</p>
+      </div>
+      <div class="features-grid">
+        <div class="feature-card animate-on-scroll">
+          <div class="feature-icon" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+          </div>
+          <h3>Instant On-Device Processing</h3>
+          <p>State-of-the-art model removes backgrounds in seconds — even on complex edges like hair and fur.</p>
+        </div>
+        <div class="feature-card animate-on-scroll animate-delay-1">
+          <div class="feature-icon" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <h3>100% Private</h3>
+          <p>Your images are processed entirely on your device using WebAssembly and WebGL. Nothing is uploaded anywhere.</p>
+        </div>
+        <div class="feature-card animate-on-scroll animate-delay-2">
+          <div class="feature-icon" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          </div>
+          <h3>Batch Processing</h3>
+          <p>Process dozens of images at once. Queue them up, run them all, and download a ZIP — perfect for product photos.</p>
+        </div>
+        <div class="feature-card animate-on-scroll">
+          <div class="feature-icon" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+          </div>
+          <h3>Touch-up Brush</h3>
+          <p>Fine-tune the AI's result with a precision brush. Erase missed areas or restore pixels with full undo/redo support.</p>
+        </div>
+        <div class="feature-card animate-on-scroll animate-delay-1">
+          <div class="feature-icon" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+          </div>
+          <h3>Custom Backgrounds</h3>
+          <p>Replace the background with any color, white, black, or your own photo. Download ready-to-use composites.</p>
+        </div>
+        <div class="feature-card animate-on-scroll animate-delay-2">
+          <div class="feature-icon" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/></svg>
+          </div>
+          <h3>History &amp; PWA</h3>
+          <p>All processed images are saved in your browser's history. Install as a PWA for offline use — works without internet.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="how-it-works" class="how-section" aria-labelledby="how-title">
+    <div class="container">
+      <div class="section-header animate-on-scroll">
+        <span class="section-tag">How It Works</span>
+        <h2 class="section-title" id="how-title">Three Steps to Perfect</h2>
+        <p class="section-subtitle">No complicated settings. Just upload, process, and download.</p>
+      </div>
+      <div class="steps-grid">
+        <div class="step-card animate-on-scroll">
+          <span class="step-number" aria-hidden="true">1</span>
+          <div class="step-icon" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+          </div>
+          <h3>Upload Your Image</h3>
+          <p>Drag &amp; drop, click to browse, or paste directly from your clipboard. Supports JPG, PNG, WebP, and AVIF.</p>
+        </div>
+        <div class="step-card animate-on-scroll animate-delay-1">
+          <span class="step-number" aria-hidden="true">2</span>
+          <div class="step-icon" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+          </div>
+          <h3>Engine Removes the BG</h3>
+          <p>Our on-device smart engine detects and removes the background with pixel-perfect precision. No cloud, no waiting.</p>
+        </div>
+        <div class="step-card animate-on-scroll animate-delay-2">
+          <span class="step-number" aria-hidden="true">3</span>
+          <div class="step-icon" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.25"/></svg>
+          </div>
+          <h3>Download &amp; Use</h3>
+          <p>Download as PNG or WebP, copy to clipboard, or add a custom background. Touch up any edges with the brush tool.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="faq-section" aria-labelledby="faq-title">
+    <div class="container">
+      <div class="section-header animate-on-scroll">
+        <span class="section-tag">FAQ</span>
+        <h2 class="section-title" id="faq-title">Common Questions</h2>
+      </div>
+      <div class="faq-list" role="list">
+        <details class="faq-item animate-on-scroll" role="listitem">
+          <summary class="faq-question">Is DecOne Eraser really free?</summary>
+          <div class="faq-answer"><p>Yes, completely free with no limits. We don't charge per image, don't require an account, and have no hidden fees. The model runs entirely in your browser.</p></div>
+        </details>
+        <details class="faq-item animate-on-scroll animate-delay-1" role="listitem">
+          <summary class="faq-question">Are my images safe and private?</summary>
+          <div class="faq-answer"><p>Absolutely. Your images never leave your device. All processing happens locally using WebAssembly and your GPU (WebGL). We have zero access to your files.</p></div>
+        </details>
+        <details class="faq-item animate-on-scroll animate-delay-2" role="listitem">
+          <summary class="faq-question">Why is the first image slow?</summary>
+          <div class="faq-answer"><p>On your first use, the model (about 100–200MB) is downloaded from a CDN and cached in your browser. Subsequent images process instantly, and the model stays cached between sessions.</p></div>
+        </details>
+        <details class="faq-item animate-on-scroll" role="listitem">
+          <summary class="faq-question">What file formats are supported?</summary>
+          <div class="faq-answer"><p>JPG, PNG, WebP, and AVIF. Files up to 15MB. Output is always transparent PNG (or WebP). For very large images, consider resizing first for faster processing.</p></div>
+        </details>
+        <details class="faq-item animate-on-scroll animate-delay-1" role="listitem">
+          <summary class="faq-question">How does batch processing work?</summary>
+          <div class="faq-answer"><p>Switch to Batch Mode, add as many images as you like, then click "Process All". Each image is processed in sequence. When done, download all results as a single ZIP file.</p></div>
+        </details>
+        <details class="faq-item animate-on-scroll animate-delay-2" role="listitem">
+          <summary class="faq-question">Can I use it offline?</summary>
+          <div class="faq-answer"><p>Yes! After the first use (when the model is downloaded), you can install DecOne Eraser as a PWA from your browser and use it fully offline. The service worker caches everything needed.</p></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="container">
+      <div class="cta-card animate-on-scroll">
+        <div class="cta-glow" aria-hidden="true"></div>
+        <h2 class="cta-title">Ready to Remove Backgrounds?</h2>
+        <p class="cta-subtitle">No sign-up, no credit card, no limits. Start right now — it's completely free.</p>
+        <button class="btn btn-primary btn-xl" onclick="document.getElementById('hero-upload-btn').click()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+          Upload Your First Image
+        </button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-logo">
+        <a href="/" class="logo" aria-label="DecOne Eraser">
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <defs>
+              <linearGradient id="footerPremiumGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#6366f1"/>
+                <stop offset="50%" stop-color="#a855f7"/>
+                <stop offset="100%" stop-color="#ec4899"/>
+              </linearGradient>
+            </defs>
+            <path d="M6 6h10c6.627 0 12 5.373 12 12s-5.373 12-12 12H6V6z" fill="url(#footerPremiumGrad)" opacity="0.15" />
+            <path d="M6 6h8c5.523 0 10 4.477 10 10s-4.477 10-10 10H6V6z" stroke="url(#footerPremiumGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M12 11l4-4v18" stroke="url(#footerPremiumGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+            <circle cx="16" cy="18" r="2.5" fill="#ffffff" />
+          </svg>
+          DecOne<span class="logo-accent">Eraser</span>
+        </a>
+        <p>Free, private on-device background removal — right in your browser.</p>
+      </div>
+      <nav class="footer-nav" aria-label="Footer navigation">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; 2026 ivankafi03 · Runs 100% in your browser · Zero uploads · Zero tracking</p>
+    </div>
+  </div>
+</footer>
+
+<script type="module" src="app.js?v=13"></script>
+</body>
+</html>

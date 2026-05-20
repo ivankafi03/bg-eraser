@@ -1,0 +1,24 @@
+{
+  "name": "DecOne Eraser — Background Removal",
+  "short_name": "DecOne Eraser",
+  "description": "Remove image backgrounds instantly. 100% free, private, and runs entirely in your browser.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#07070f",
+  "theme_color": "#6366f1",
+  "orientation": "any",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "categories": ["photo", "productivity", "utilities"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Remove Background",
+      "short_name": "Remove BG",
+      "description": "Quickly remove a background from an image",
+      "url": "./#upload-section"
+    }
+  ]
+}
