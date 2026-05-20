@@ -685,7 +685,7 @@ async function commitTouchup() {
   const imgAfter = $('img-after');
   if (imgAfter) imgAfter.src = state.resultURL;
   applyBackground();
-  showToast('Touch-up applied! ✨', 'success');
+  showToast('Touch-up applied.', 'success');
 }
 
 // ── Brush Cursor ──────────────────────────────────────────────
